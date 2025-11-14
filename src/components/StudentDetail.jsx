@@ -5,11 +5,12 @@ import Modal from './Modal'
 import pencilIcon from '../assets/pencil.png'
 
 export default function StudentDetail() {
-  const { state, selectedStudent, dispatch } = useStore()
+  const { state, selectedStudent, dispatch, updateExercise } = useStore()
   const [editingExercise, setEditingExercise] = useState(null)
   const [editRm, setEditRm] = useState('')
   const [editUnit, setEditUnit] = useState('kg')
   const [editDate, setEditDate] = useState('')
+  const [loading, setLoading] = useState(false)
 
   function handleSelect(e) {
     const studentId = e.target.value
@@ -32,21 +33,29 @@ export default function StudentDetail() {
     setEditDate('')
   }
 
-  function handleUpdate(e) {
+  async function handleUpdate(e) {
     e.preventDefault()
-    if (!editingExercise || !editRm) return
+    if (!editingExercise || !editRm || loading) return
     
-    dispatch({
-      type: 'UPDATE_EXERCISE',
-      payload: {
-        studentId: selectedStudent.id,
-        exerciseId: editingExercise.id,
-        rm: editRm,
-        unit: editUnit,
-        date: editDate,
-      },
-    })
-    closeEditModal()
+    setLoading(true)
+    try {
+      await updateExercise(
+        selectedStudent.id,
+        editingExercise.id,
+        editRm,
+        editUnit,
+        editDate
+      )
+      closeEditModal()
+    } catch (error) {
+      alert('Error al actualizar ejercicio: ' + error.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (state.loading) {
+    return <p className="muted">Cargando...</p>
   }
 
   if (state.students.length === 0) {
@@ -134,9 +143,9 @@ export default function StudentDetail() {
               onChange={(e) => setEditDate(e.target.value)}
             />
           </div>
-          <button className="button" type="submit">
-            Guardar cambios
-          </button>
+              <button className="button" type="submit" disabled={loading}>
+                {loading ? 'Guardando...' : 'Guardar cambios'}
+              </button>
         </form>
       </Modal>
     </>

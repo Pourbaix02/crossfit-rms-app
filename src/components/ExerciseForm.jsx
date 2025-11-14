@@ -26,30 +26,34 @@ const EXERCISES = [
 ]
 
 export default function ExerciseForm() {
-  const { state, dispatch } = useStore()
+  const { state, addExercise } = useStore()
   const [selectedId, setSelectedId] = useState('')
   const [name, setName] = useState('')
   const [rm, setRm] = useState('')
   const [unit, setUnit] = useState('kg')
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
+  const [loading, setLoading] = useState(false)
 
-  function onSubmit(e) {
+  async function onSubmit(e) {
     e.preventDefault()
-    if (!selectedId || !name.trim() || !rm) return
-    dispatch({
-      type: 'ADD_EXERCISE',
-      payload: {
-        studentId: selectedId,
-        name,
-        rm: Number(rm),
-        unit,
-        date,
-      },
-    })
-    setName('')
-    setRm('')
-    setUnit('kg')
-    setDate(new Date().toISOString().slice(0, 10))
+    if (!selectedId || !name.trim() || !rm || loading) return
+    
+    setLoading(true)
+    try {
+      await addExercise(selectedId, name, rm, unit, date)
+      setName('')
+      setRm('')
+      setUnit('kg')
+      setDate(new Date().toISOString().slice(0, 10))
+    } catch (error) {
+      alert('Error al agregar ejercicio: ' + error.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (state.loading) {
+    return <p className="muted">Cargando...</p>
   }
 
   if (state.students.length === 0) {
@@ -106,9 +110,9 @@ export default function ExerciseForm() {
           onChange={(e) => setDate(e.target.value)}
         />
       </div>
-      <button className="button" type="submit">
+      <button className="button" type="submit" disabled={loading}>
         <Dumbbell size={18} className="icon" />
-        Agregar ejercicio
+        {loading ? 'Agregando...' : 'Agregar ejercicio'}
       </button>
     </form>
   )

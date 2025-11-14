@@ -3,14 +3,23 @@ import { useStore } from '../store'
 import { UserPlus } from 'lucide-react'
 
 export default function StudentForm() {
-  const { dispatch } = useStore()
+  const { addStudent } = useStore()
   const [name, setName] = useState('')
+  const [loading, setLoading] = useState(false)
 
-  function onSubmit(e) {
+  async function onSubmit(e) {
     e.preventDefault()
-    if (!name.trim()) return
-    dispatch({ type: 'ADD_STUDENT', payload: { name } })
-    setName('')
+    if (!name.trim() || loading) return
+    
+    setLoading(true)
+    try {
+      await addStudent(name)
+      setName('')
+    } catch (error) {
+      alert('Error al agregar crossfitero: ' + error.message)
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -22,9 +31,9 @@ export default function StudentForm() {
         onChange={(e) => setName(e.target.value)}
         required
       />
-      <button className="button" type="submit">
+      <button className="button" type="submit" disabled={loading}>
         <UserPlus size={18} className="icon" />
-        Agregar crossfitero
+        {loading ? 'Agregando...' : 'Agregar crossfitero'}
       </button>
     </form>
   )

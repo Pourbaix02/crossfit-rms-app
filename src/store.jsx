@@ -1,93 +1,38 @@
-import { createContext, useContext, useEffect, useMemo, useReducer } from 'react'
-
-const STORAGE_KEY = 'odin_fitness_state_v2'
+import { createContext, useContext, useEffect, useMemo, useReducer, useState } from 'react'
+import { supabase } from './supabaseClient'
 
 function generateId(prefix) {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 }
 
-const initialMockState = {
-  students: [
-    {
-      id: generateId('stu'),
-      name: 'Juan Pérez',
-      exercises: [
-        { id: generateId('ex'), name: 'Back Squat', rm: 150, unit: 'kg', date: '2025-11-10' },
-        { id: generateId('ex'), name: 'Deadlift', rm: 180, unit: 'kg', date: '2025-11-08' },
-      ],
-    },
-    {
-      id: generateId('stu'),
-      name: 'María López',
-      exercises: [
-        { id: generateId('ex'), name: 'Back Squat', rm: 95, unit: 'kg', date: '2025-11-12' },
-        { id: generateId('ex'), name: 'Front Squat', rm: 75, unit: 'kg', date: '2025-11-11' },
-        { id: generateId('ex'), name: 'Overhead Squat', rm: 55, unit: 'kg', date: '2025-11-10' },
-        { id: generateId('ex'), name: 'Power Clean', rm: 70, unit: 'kg', date: '2025-11-09' },
-        { id: generateId('ex'), name: 'Squat Clean', rm: 65, unit: 'kg', date: '2025-11-08' },
-        { id: generateId('ex'), name: 'Clean and Jerk', rm: 60, unit: 'kg', date: '2025-11-07' },
-        { id: generateId('ex'), name: 'Power Snatch', rm: 50, unit: 'kg', date: '2025-11-06' },
-        { id: generateId('ex'), name: 'Squat Snatch', rm: 45, unit: 'kg', date: '2025-11-05' },
-        { id: generateId('ex'), name: 'Deadlift', rm: 130, unit: 'kg', date: '2025-11-04' },
-        { id: generateId('ex'), name: 'Romanian Deadlift', rm: 100, unit: 'kg', date: '2025-11-03' },
-        { id: generateId('ex'), name: 'Push Press', rm: 55, unit: 'kg', date: '2025-11-02' },
-        { id: generateId('ex'), name: 'Push Jerk', rm: 52, unit: 'kg', date: '2025-11-01' },
-        { id: generateId('ex'), name: 'Pull Ups', rm: 25, unit: 'kg', date: '2025-10-31' },
-        { id: generateId('ex'), name: 'Chest to Bar', rm: 20, unit: 'kg', date: '2025-10-30' },
-        { id: generateId('ex'), name: 'Toes to Bar', rm: 15, unit: 'kg', date: '2025-10-29' },
-      ],
-    },
-  ],
+const initialState = {
+  students: [],
   selectedStudentId: null,
-}
-
-function loadState() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return initialMockState
-    const parsed = JSON.parse(raw)
-    if (!parsed || typeof parsed !== 'object') return initialMockState
-    return parsed
-  } catch {
-    return initialMockState
-  }
-}
-
-function saveState(state) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
-  } catch {
-    // ignore
-  }
+  loading: true,
 }
 
 const StoreContext = createContext(null)
 
 function reducer(state, action) {
   switch (action.type) {
+    case 'SET_STUDENTS': {
+      return { ...state, students: action.payload, loading: false }
+    }
+    case 'SET_LOADING': {
+      return { ...state, loading: action.payload }
+    }
     case 'ADD_STUDENT': {
-      const newStudent = {
-        id: generateId('stu'),
-        name: action.payload.name.trim(),
-        exercises: [],
-      }
+      const newStudent = action.payload
       return { ...state, students: [newStudent, ...state.students] }
     }
     case 'SELECT_STUDENT': {
       return { ...state, selectedStudentId: action.payload.id }
     }
     case 'ADD_EXERCISE': {
-      const { studentId, name, rm, unit, date } = action.payload
+      const { studentId, exercise } = action.payload
       const updated = state.students.map((s) => {
         if (s.id !== studentId) return s
-        const entry = {
-          id: generateId('ex'),
-          name: name.trim(),
-          rm: Number(rm),
-          unit: unit || 'kg',
-          date: date || new Date().toISOString().slice(0, 10),
-        }
-        return { ...s, exercises: [entry, ...s.exercises] }
+        return { ...s, exercises: [exercise, ...s.exercises] }
       })
       return { ...state, students: updated }
     }
@@ -114,15 +59,142 @@ function reducer(state, action) {
 }
 
 export function StoreProvider({ children }) {
-  const [state, dispatch] = useReducer(reducer, undefined, loadState)
+  const [state, dispatch] = useReducer(reducer, initialState)
 
+  // Cargar datos iniciales desde Supabase
   useEffect(() => {
-    saveState(state)
-  }, [state])
+    loadStudents()
+  }, [])
+
+  async function loadStudents() {
+    try {
+      dispatch({ type: 'SET_LOADING', payload: true })
+      
+      // Cargar estudiantes
+      const { data: students, error: studentsError } = await supabase
+        .from('students')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (studentsError) throw studentsError
+
+      // Cargar ejercicios para cada estudiante
+      const { data: exercises, error: exercisesError } = await supabase
+        .from('exercises')
+        .select('*')
+        .order('date', { ascending: false })
+
+      if (exercisesError) throw exercisesError
+
+      // Combinar estudiantes con sus ejercicios
+      const studentsWithExercises = (students || []).map(student => ({
+        id: student.id,
+        name: student.name,
+        exercises: (exercises || [])
+          .filter(ex => ex.student_id === student.id)
+          .map(ex => ({
+            id: ex.id,
+            name: ex.name,
+            rm: ex.rm,
+            unit: ex.unit,
+            date: ex.date,
+          }))
+      }))
+
+      dispatch({ type: 'SET_STUDENTS', payload: studentsWithExercises })
+    } catch (error) {
+      console.error('Error loading data:', error)
+      dispatch({ type: 'SET_LOADING', payload: false })
+    }
+  }
 
   const value = useMemo(() => {
     const selectedStudent = state.students.find((s) => s.id === state.selectedStudentId) || null
-    return { state, dispatch, selectedStudent }
+
+    // Funciones con Supabase
+    const addStudent = async (name) => {
+      try {
+        const { data, error } = await supabase
+          .from('students')
+          .insert([{ name: name.trim() }])
+          .select()
+          .single()
+
+        if (error) throw error
+
+        const newStudent = {
+          id: data.id,
+          name: data.name,
+          exercises: [],
+        }
+        dispatch({ type: 'ADD_STUDENT', payload: newStudent })
+        return newStudent
+      } catch (error) {
+        console.error('Error adding student:', error)
+        throw error
+      }
+    }
+
+    const addExercise = async (studentId, name, rm, unit, date) => {
+      try {
+        const { data, error } = await supabase
+          .from('exercises')
+          .insert([{
+            student_id: studentId,
+            name: name.trim(),
+            rm: Number(rm),
+            unit: unit || 'kg',
+            date: date || new Date().toISOString().slice(0, 10),
+          }])
+          .select()
+          .single()
+
+        if (error) throw error
+
+        const exercise = {
+          id: data.id,
+          name: data.name,
+          rm: data.rm,
+          unit: data.unit,
+          date: data.date,
+        }
+        dispatch({ type: 'ADD_EXERCISE', payload: { studentId, exercise } })
+        return exercise
+      } catch (error) {
+        console.error('Error adding exercise:', error)
+        throw error
+      }
+    }
+
+    const updateExercise = async (studentId, exerciseId, rm, unit, date) => {
+      try {
+        const { error } = await supabase
+          .from('exercises')
+          .update({
+            rm: Number(rm),
+            unit: unit,
+            date: date,
+          })
+          .eq('id', exerciseId)
+
+        if (error) throw error
+
+        dispatch({ type: 'UPDATE_EXERCISE', payload: { studentId, exerciseId, rm, unit, date } })
+      } catch (error) {
+        console.error('Error updating exercise:', error)
+        throw error
+      }
+    }
+
+    return {
+      state,
+      dispatch,
+      selectedStudent,
+      addStudent,
+      addExercise,
+      updateExercise,
+      loading: state.loading,
+    }
   }, [state])
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>
@@ -133,5 +205,3 @@ export function useStore() {
   if (!ctx) throw new Error('useStore must be used within StoreProvider')
   return ctx
 }
-
-
